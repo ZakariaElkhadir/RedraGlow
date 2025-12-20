@@ -1,2 +1,2 @@
-dbus-fast==2.44.5
+dbus-fast==3.1.2
 hid==1.0.8

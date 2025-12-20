@@ -1,37 +1,39 @@
 # Anubeam
 
-### Redragon Anubis keyboard input sources backlight indicator for Fedora
-Tested with Fedora 42 (GNOME 48), Python 3.13.9
+### Redragon Anubis keyboard input sources backlight indicator for Fedora/Ubuntu
 
+Tested with Fedora 43 (GNOME 49) and Ubuntu 24.04 (GNOME 46), Python 3.13.9
+
+Works only with a wired (USB) connection. Bluetooth and 2.4G receiver modes are not supported due to limitations of the
+keyboard PC software.
 
 ## Idea
-A GNOME extension detects input source changes and exposes them over D-Bus so a Python script can adjust the keyboard backlight
 
-***
-## How It Works
-The Anubeam system connects the GNOME input source events with direct hardware control of your Redragon Anubis keyboard backlight
+A GNOME extension detects input source changes and exposes them over D-Bus so a Python script can adjust the keyboard
+backlight
 
 ### 1. GNOME Extension (`input-source-monitor@eshfield`)
+
 - Listens for input source changes in GNOME Shell
 - Emits a D-Bus signal `SourceChanged` with the current layout ID (e.g. `us`, `ru`)
 
 ### 2. D-Bus Interface (`org.gnome.InputSourceMonitor`)
+
 - Provides a communication channel between the GNOME Shell and user-space applications
 - The Python script subscribes to these signals to react instantly when the layout changes
 
-### 3. udev Rule (`99-keyboard.rules`)
-- Grants non-root access to the keyboard’s HID interface
-- Ensures the Python script can send commands to the device without elevated privileges
+### 3. Python Script
 
-### 4. Python Script
-- Runs continuously as a `systemd --user` service
+- Runs continuously in the user session
 - Connects to D-Bus and listens for `SourceChanged` signals
 - Maps each layout ID to a color (e.g. white for English, red for Russian)
 - Sends HID commands directly to the keyboard to change the backlight color
 
-Together, these components form a fully automated system: **Change your keyboard layout** → **GNOME extension detects it** → **D-Bus broadcasts it** → **Python service updates the keyboard light**
+Together, these components form a fully automated system: **Keyboard layout changes** → **GNOME extension detects it** →
+**D-Bus broadcasts it** → **Python service updates the keyboard light**
 
 ***
+
 ## Installation
 
 ### Step I: Install Input Source Monitor GNOME extension
@@ -45,7 +47,7 @@ a custom D-Bus interface
 ~/.local/share/gnome-shell/extensions/
 ```
 
-2. Restart GNOME Shell (log out and back in, or press Alt + F2, type `r`, and hit `Enter`)
+2. Restart GNOME Shell (log out and back in)
 
 
 3. Enable the extension:
@@ -66,6 +68,8 @@ sudo nano /etc/udev/rules.d/99-keyboard.rules
 
 2. Add the following rule:
 
+> Note: The `idVendor`/`idProduct` values below correspond to the keyboard in wired USB mode
+
 ```
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="258a", ATTRS{idProduct}=="0049", MODE="0666"
 ```
@@ -78,74 +82,73 @@ sudo udevadm trigger
 ```
 
 ### Step III: Install Python Dependencies
-Install required packages (create new virtual environment or use system):
+
+1. Install a Python version and create a new virtual environment. I recommend
+   using [pyenv](https://github.com/pyenv/pyenv)
+
+
+2. Install required packages:
+
 ```
 pip install -r requirements.txt
 ```
 
-### Step IV: Add the Python Script to System Startup
-
-To make sure the keyboard light controller starts automatically with your desktop session, create a user-level `systemd`
-service
-
-1. Create a log file for runtime output:
+3. Package `hid` [requires](https://pypi.org/project/hid/) `hidapi` library. Fedora 43 has it already, on Ubuntu you
+   need to install it manually:
 
 ```
-sudo touch /var/log/anubeam.log
-sudo chown eshfield:eshfield /var/log/anubeam.log
+sudo apt install libhidapi-hidraw0 -y
 ```
 
-2. Create the service file:
+### Step IV: Add the Python Script to GNOME Session Startup
+
+To make sure the keyboard light controller starts automatically with your desktop session, create a `.desktop` file:
 
 ```
-mkdir -p ~/.config/systemd/user
-nano ~/.config/systemd/user/anubeam.service
+mkdir -p ~/.config/autostart
+nano ~/.config/autostart/anubeam.desktop
 ```
 
-3. Add the following content (adjust paths to match your environment):
+Add the following content (adjust paths to match your environment):
 
 ```
-[Unit]
-Description=Anubeam keyboard light controller
-After=graphical-session.target
-Wants=graphical-session.target
-
-[Service]
-ExecStart=<PATH_TO_PYTHON_BIN> <PATH_TO_MAIN_PY_FILE>
-WorkingDirectory=<PATH_TO_PROJECT_DIRECTORY>
-Restart=always
-Environment=PYTHONUNBUFFERED=1
-StandardOutput=append:/var/log/anubeam.log
-
-[Install]
-WantedBy=default.target
+[Desktop Entry]
+Type=Application
+Name=Anubeam
+Exec=systemd-cat -t anubeam <ABSOLUTE_PATH_TO_PYTHON_BIN> <ABSOLUTE_PATH_TO_MAIN_PY_FILE>
+X-GNOME-Autostart-enabled=true
+NoDisplay=false
+Comment=Keyboard light controller
 ```
 
-4. Reload the daemon and enable the service:
+Log out and log back into the GNOME session, and you are done! The Anubeam Python script will now start automatically
+when you log in. It will listen for keyboard layout changes over D-Bus and adjust the backlight color accordingly.
 
-```
-systemctl --user daemon-reload
-systemctl --user enable anubeam.service
-systemctl --user start anubeam.service
-```
+Logs can be viewed with:
 
-Done! The Anubeam Python script will now start automatically when you log in and listen for keyboard layout changes over
-D-Bus to adjust the backlight color
+```bash
+journalctl --user -t anubeam
+```
 
 ***
+
 ## Bytes Packets Structure Overview
-To change the keyboard backlight, you need to send two packets, each 1032 bytes long (padded with zeroes after the following structure)
+
+To change the keyboard backlight, you need to send two packets, each 1032 bytes long (padded with zeroes after the
+following structure)
 
 ### Packet 1
+
 ```
-06 08 b8 00 40 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 __ __ __ 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff ff ff 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff
+06 08 b8 00 40 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 __ __ __ 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff 00 ff 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff
 ```
 
 `__ __ __` — light color values, e.g. `ff 00 00` for red
 
 ### Packet 2
+
 ```
-06 03 b6 00 00 00 00 00 00 00 00 00 00 00 5a a5 03 03 00 00 00 01 20 01 00 00 00 00 55 55 01 00 00 00 00 00 ff ff 00 __ 07 33 07 33 07 33 07 33 07 33 07 33 07 33 07 33 07 33 07 33 07 33 07 33 07 33 07 33 07 33 07 33 07 33 07 33 07 33 5a a5 00 10 07 44 07 44 07 44 07 44 07 44 07 44 07 44 04 04 04 04 04 04 04 04 04 04 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 5a a5 03 03
+06 03 b6 00 00 00 00 00 00 00 00 00 00 00 5a a5 03 03 00 00 00 01 20 01 00 00 00 00 55 55 01 00 00 00 00 00 ff ff 00 __ 07 33 07 33 07 33 07 33 07 33 07 33 07 33 07 33 07 33 00 33 07 33 07 33 07 33 07 33 07 33 07 33 07 33 07 33 07 33 5a a5 00 10 07 44 07 44 07 44 07 44 07 44 07 44 07 44 04 04 04 04 04 04 04 04 04 04 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 5a a5 03 03
 ```
 
 `__` — light intensity values:

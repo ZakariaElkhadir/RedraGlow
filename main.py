@@ -1,13 +1,14 @@
 import asyncio
 import logging
 import sys
+from typing import Optional
 
 from dbus_fast import DBusError
-from dbus_fast.aio import MessageBus
+from dbus_fast.aio import MessageBus, ProxyInterface
 
 from keyboard_controller import KeyboardController
 
-START_TIMEOUT = 10
+START_TIMEOUT_SECONDS = 10
 
 BUS_NAME = "org.gnome.InputSourceMonitor"
 BUS_PATH = "/org/gnome/InputSourceMonitor"
@@ -28,54 +29,66 @@ logging.basicConfig(
 )
 
 
-async def main():
-    keyboard = KeyboardController(logger)
-    result = keyboard.connect()
-    if not result:
-        logger.error("Keyboard connection failure")
-        return
+async def wait_for_input_source_interface(bus: MessageBus) -> Optional[ProxyInterface]:
+    for i in range(1, START_TIMEOUT_SECONDS + 1):
+        try:
+            introspection = await bus.introspect(BUS_NAME, BUS_PATH)
+            proxy = bus.get_proxy_object(BUS_NAME, BUS_PATH, introspection)
+            logger.info("Connected to D-Bus")
+            return proxy.get_interface(BUS_NAME)
+        except DBusError:
+            logger.info(f"Try #{i}: DBus service is not ready, retrying")
+            await asyncio.sleep(1)
 
-    bus = await MessageBus().connect()
-    last_source = None
+    return None
+
+
+async def main():
+    keyboard: Optional[KeyboardController] = None
+    bus: Optional[MessageBus] = None
 
     try:
-        for i in range(1, START_TIMEOUT + 1):
-            await asyncio.sleep(1)
-            try:
-                introspection = await bus.introspect(BUS_NAME, BUS_PATH)
-            except DBusError:
-                logger.info(f"Try #{i}: DBus service is not ready, retrying")
-                continue
-            break
-        else:
-            logger.error("DBus service not available, exiting")
+        keyboard = KeyboardController(logger)
+        if not keyboard.connect():
+            logger.error("Keyboard connection failure")
             return
 
-        proxy = bus.get_proxy_object(BUS_NAME, BUS_PATH, introspection)
-        interface = proxy.get_interface(BUS_NAME)
+        bus = await MessageBus().connect()
 
-        def handle_source_change(source):
-            nonlocal last_source
-            if source != last_source:
-                last_source = source
-                color = COLORS.get(source)
-                if not color:
-                    logger.warning(f"Unexpected source: {source}")
-                    return
-                keyboard.change_color(color)
+        interface = await wait_for_input_source_interface(bus)
+        if interface is None:
+            logger.error(f"D-Bus service is not available after {START_TIMEOUT_SECONDS} seconds")
+            return
+
+        last_source: dict[str, Optional[str]] = {"value": None}
+
+        def handle_source_change(source: str) -> None:
+            if source == last_source["value"]:
+                return
+
+            last_source["value"] = source
+            color = COLORS.get(source)
+            if not color:
+                logger.warning(f"Unexpected input source: {source}")
+                return
+
+            keyboard.change_color(color)
 
         interface.on_source_changed(handle_source_change)  # type: ignore
 
-        stop_event = asyncio.Event()
-        logger.info("Listening for source changes. Press Ctrl+C to exit")
-        await stop_event.wait()
-    except Exception as e:
-        logger.error(f"DBUS Error: {e}")
-    except asyncio.exceptions.CancelledError:
+        logger.info("Listening for input source changes. Press Ctrl+C to exit")
+        await asyncio.Future()
+    except DBusError as e:
+        logger.error(f"D-Bus error: {e}")
+    except asyncio.CancelledError:
         logger.info("Shutdown requested")
+    except Exception as e:
+        logger.exception(f"Unexpected error: {e}")
     finally:
-        keyboard.close()
-        bus.disconnect()
+        if keyboard is not None:
+            keyboard.close()
+        if bus is not None:
+            bus.disconnect()
         logger.info("Exit")
 
 
