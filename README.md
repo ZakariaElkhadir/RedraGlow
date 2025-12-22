@@ -1,11 +1,13 @@
 # Anubeam
 
-### Redragon Anubis keyboard input sources backlight indicator for Fedora/Ubuntu
+### Redragon Anubis keyboard (K539-RGB) input sources backlight indicator for Fedora/Ubuntu
 
 Tested with Fedora 43 (GNOME 49) and Ubuntu 24.04 (GNOME 46), Python 3.13.9
 
 Works only with a wired (USB) connection. Bluetooth and 2.4G receiver modes are not supported due to limitations of the
 keyboard PC software.
+
+See this [Habr article](https://habr.com/ru/articles/979382/) for a detailed installation and configuration guide
 
 ## Idea
 
@@ -41,7 +43,7 @@ Together, these components form a fully automated system: **Keyboard layout chan
 This extension listens for changes in the current keyboard input source and broadcasts these events through
 a custom D-Bus interface
 
-1. Copy the directory `input-source-monitor@eshfield` to:
+1. Copy the directory `input-source-monitor@eshfield` to (create `extensions` folder if needed):
 
 ```
 ~/.local/share/gnome-shell/extensions/
@@ -84,10 +86,14 @@ sudo udevadm trigger
 ### Step III: Install Python Dependencies
 
 1. Install a Python version and create a new virtual environment. I recommend
-   using [pyenv](https://github.com/pyenv/pyenv)
+   using [pyenv](https://github.com/pyenv/pyenv): installation steps A-D
 
+```
+pyenv install 3.13.9
+pyenv virtualenv 3.13.9 anubeam-3.13.9
+```
 
-2. Install required packages:
+2. Navigate to project folder, activate created virtual environment and install required packages:
 
 ```
 pip install -r requirements.txt
@@ -126,7 +132,7 @@ when you log in. It will listen for keyboard layout changes over D-Bus and adjus
 
 Logs can be viewed with:
 
-```bash
+```
 journalctl --user -t anubeam
 ```
 
