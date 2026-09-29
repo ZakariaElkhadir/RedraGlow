@@ -1,166 +1,179 @@
-# Anubeam
+# RedraGlow
 
-### Redragon Anubis keyboard (K539-RGB) input sources backlight indicator for Fedora/Ubuntu
+<p align="center">
+  <b>A native, lightweight Linux RGB backlight CLI controller & automation suite for Redragon Anubis K539 and BY Tech mechanical keyboards.</b>
+</p>
 
-Tested with Fedora 43 (GNOME 49) and Ubuntu 24.04 (GNOME 46), Python 3.13.9
+<p align="center">
+  <img src="https://img.shields.io/badge/Platform-Linux-FCC624?style=flat&logo=linux&logoColor=black" alt="Platform Linux" />
+  <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat&logo=python&logoColor=white" alt="Python 3.10+" />
+  <img src="https://img.shields.io/badge/Protocol-Raw%20USB%20HID-blue" alt="USB HID" />
+  <img src="https://img.shields.io/badge/License-MIT-green" alt="License MIT" />
+</p>
 
-Works only with a wired (USB) connection. Bluetooth and 2.4G receiver modes are not supported due to limitations of the
-keyboard PC software.
+---
 
-See this [Habr article](https://habr.com/ru/articles/979382/) for a detailed installation and configuration guide
+## 💡 The Story & Motivation
 
-## Idea
+Most mechanical keyboards on the market—such as the **Redragon Anubis K539-RGB** (and other boards powered by the **BY Tech `0x258a:0x0049`** microcontroller)—only offer proprietary, Windows-only configuration software. For Linux users, there is zero official software support.
 
-A GNOME extension detects input source changes and exposes them over D-Bus so a Python script can adjust the keyboard
-backlight
+Rather than booting into Windows, running slow virtual machines, or struggling with wine wrappers, **RedraGlow** bypasses the manufacturer software entirely by reverse-engineering the raw USB HID protocol.
 
-### 1. GNOME Extension (`input-source-monitor@eshfield`)
+**RedraGlow** provides:
+1. **`redraglow` CLI**: A fast, zero-dependency, standalone CLI tool to instantly switch RGB colors, adjust brightness, or toggle lights right from your terminal.
+2. **GNOME Integration**: An optional background service and GNOME Shell extension that reactively changes your keyboard backlight when switching input languages (e.g. White for English, Red for your secondary layout).
 
-- Listens for input source changes in GNOME Shell
-- Emits a D-Bus signal `SourceChanged` with the current layout ID (e.g. `us`, `ru`)
+---
 
-### 2. D-Bus Interface (`org.gnome.InputSourceMonitor`)
+## ✨ Features
 
-- Provides a communication channel between the GNOME Shell and user-space applications
-- The Python script subscribes to these signals to react instantly when the layout changes
+- ⚡ **Instant CLI Control**: Switch colors or brightness in milliseconds (`redraglow cyan`, `redraglow "#FF5500" -b 3`).
+- 🎨 **35+ Built-in Color Presets**: Includes named presets (`red`, `cyan`, `gold`, `mint`, `ice`, `lavender`, `emerald`, etc.) and full support for any `#RRGGBB` or `RRGGBB` hex code.
+- ☀️ **5-Level Brightness Control**: Easily fine-tune brightness from `0` (off) to `4` (maximum).
+- 🖥️ **Interactive Terminal Preview**: View all available presets with real 24-bit truecolor ANSI swatches using `redraglow --list`.
+- 🔒 **One-Step Rootless Setup**: Configure `udev` permissions in seconds with `redraglow --setup-udev`—no root/sudo needed during daily use.
+- 🩺 **Hardware Diagnostics**: Quickly verify connection status, HID paths, and device permissions with `redraglow --status`.
+- 🌐 **GNOME Input Source Synchronization**: Automatically shift backlight colors according to the active input layout.
 
-### 3. Python Script
+---
 
-- Runs continuously in the user session
-- Connects to D-Bus and listens for `SourceChanged` signals
-- Maps each layout ID to a color (e.g. white for English, red for Russian)
-- Sends HID commands directly to the keyboard to change the backlight color
+## ⌨️ Hardware Compatibility
 
-Together, these components form a fully automated system: **Keyboard layout changes** → **GNOME extension detects it** →
-**D-Bus broadcasts it** → **Python service updates the keyboard light**
+Tested and compatible with mechanical keyboards utilizing the BY Tech USB microcontroller:
 
-***
+| Property | Value |
+| :--- | :--- |
+| **Vendor ID (VID)** | `0x258a` (BY Tech) |
+| **Product ID (PID)** | `0x0049` |
+| **Usage Page** | `65280` (`0xFF00`) |
+| **Confirmed Models** | Redragon Anubis K539-RGB (Wired USB Mode) |
+| **Connection** | Wired USB (Bluetooth / 2.4GHz dongle modes use different protocol layers) |
 
-## Installation
+---
 
-### Step I: Install Input Source Monitor GNOME extension
+## 🚀 Quick Start
 
-This extension listens for changes in the current keyboard input source and broadcasts these events through
-a custom D-Bus interface
+### 1. Clone & Install Dependencies
 
-1. Copy the directory `input-source-monitor@eshfield` to (create `extensions` folder if needed):
+```bash
+git clone https://github.com/ZakariaElkhadir/RedraGlow.git
+cd RedraGlow
 
-```
-~/.local/share/gnome-shell/extensions/
-```
-
-2. Restart GNOME Shell (log out and back in)
-
-
-3. Enable the extension:
-
-```
-gnome-extensions enable input-source-monitor@eshfield
-```
-
-### Step II: Set up udev Rules
-
-To allow your script to control the keyboard device without root privileges, configure the proper udev permissions
-
-1. Create a new udev rules file:
-
-```
-sudo nano /etc/udev/rules.d/99-keyboard.rules
-```
-
-2. Add the following rule:
-
-> Note: The `idVendor`/`idProduct` values below correspond to the keyboard in wired USB mode
-
-```
-SUBSYSTEM=="hidraw", ATTRS{idVendor}=="258a", ATTRS{idProduct}=="0049", MODE="0666"
-```
-
-3. Reload udev and apply the new rule:
-
-```
-sudo udevadm control --reload-rules
-sudo udevadm trigger
-```
-
-### Step III: Install Python Dependencies
-
-1. Install a Python version and create a new virtual environment. I recommend
-   using [pyenv](https://github.com/pyenv/pyenv): installation steps A-D
-
-```
-pyenv install 3.13.9
-pyenv virtualenv 3.13.9 anubeam-3.13.9
-```
-
-2. Navigate to project folder, activate created virtual environment and install required packages:
-
-```
+# Install required Python packages
 pip install -r requirements.txt
 ```
 
-3. Package `hid` [requires](https://pypi.org/project/hid/) `hidapi` library. Fedora 43 has it already, on Ubuntu you
-   need to install it manually:
+### 2. Configure udev Rules (Run Without Root)
 
-```
-sudo apt install libhidapi-hidraw0 -y
-```
+Run the built-in setup helper to grant non-root access to the keyboard:
 
-### Step IV: Add the Python Script to GNOME Session Startup
-
-To make sure the keyboard light controller starts automatically with your desktop session, create a `.desktop` file:
-
-```
-mkdir -p ~/.config/autostart
-nano ~/.config/autostart/anubeam.desktop
+```bash
+python3 redraglow.py --setup-udev
 ```
 
-Add the following content (adjust paths to match your environment):
+Or run the one-liner directly:
 
-```
-[Desktop Entry]
-Type=Application
-Name=Anubeam
-Exec=systemd-cat -t anubeam <ABSOLUTE_PATH_TO_PYTHON_BIN> <ABSOLUTE_PATH_TO_MAIN_PY_FILE>
-X-GNOME-Autostart-enabled=true
-NoDisplay=false
-Comment=Keyboard light controller
+```bash
+echo 'SUBSYSTEM=="hidraw", ATTRS{idVendor}=="258a", ATTRS{idProduct}=="0049", MODE="0666"' | sudo tee /etc/udev/rules.d/99-keyboard.rules && sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
-Log out and log back into the GNOME session, and you are done! The Anubeam Python script will now start automatically
-when you log in. It will listen for keyboard layout changes over D-Bus and adjust the backlight color accordingly.
+*Unplug and re-plug the keyboard once to apply.*
 
-Logs can be viewed with:
+### 3. (Optional) Install `redraglow` to PATH
 
-```
-journalctl --user -t anubeam
-```
+To run `redraglow` from anywhere in your terminal:
 
-***
-
-## Bytes Packets Structure Overview
-
-To change the keyboard backlight, you need to send two packets, each 1032 bytes long (padded with zeroes after the
-following structure)
-
-### Packet 1
-
-```
-06 08 b8 00 40 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 __ __ __ 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff 00 ff 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff ff 00 00 00 00 ff 00 ff 00 ff ff 00 ff 00 ff 00 ff ff ff ff ff
+```bash
+mkdir -p ~/.local/bin
+ln -sf "$(pwd)/redraglow.py" ~/.local/bin/redraglow
+chmod +x redraglow.py
 ```
 
-`__ __ __` — light color values, e.g. `ff 00 00` for red
+*(Ensure `~/.local/bin` is in your `$PATH`)*
 
-### Packet 2
+---
 
+## 🛠️ CLI Usage Examples
+
+```bash
+# Set a predefined color
+redraglow cyan
+redraglow emerald
+redraglow purple
+
+# Set a custom HEX color
+redraglow "#FF5500"
+redraglow 00FFCC
+
+# Set color with custom brightness (0 = off, 4 = max)
+redraglow gold --brightness 2
+redraglow red -b 1
+
+# Turn off backlight completely
+redraglow off
+redraglow --off
+
+# List all color presets with terminal swatches
+redraglow --list
+
+# Check keyboard connection & permission status
+redraglow --status
 ```
-06 03 b6 00 00 00 00 00 00 00 00 00 00 00 5a a5 03 03 00 00 00 01 20 01 00 00 00 00 55 55 01 00 00 00 00 00 ff ff 00 __ 07 33 07 33 07 33 07 33 07 33 07 33 07 33 07 33 07 33 00 33 07 33 07 33 07 33 07 33 07 33 07 33 07 33 07 33 07 33 5a a5 00 10 07 44 07 44 07 44 07 44 07 44 07 44 07 44 04 04 04 04 04 04 04 04 04 04 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 5a a5 03 03
-```
 
-`__` — light intensity values:
+---
 
-- `30` → off
-- `31` → level 1
-- `32` → level 2
-- `33` → level 3
-- `34` → level 4
+## 🎨 Color Palette Preview
+
+Run `redraglow --list` to display all predefined colors with truecolor swatches directly in your terminal:
+
+| Base Colors | Blue / Cyan Shades | Green Shades | Warm / Purple Shades |
+| :--- | :--- | :--- | :--- |
+| `white` (`#FFFFFF`) | `cyan` (`#00FFFF`) | `green` (`#00FF00`) | `orange` (`#FFA500`) |
+| `black` (`#000000`) | `sky` (`#87CEEB`) | `emerald` (`#50C878`)| `gold` (`#FFD700`) |
+| `red` (`#FF0000`) | `azure` (`#007FFF`) | `mint` (`#98FF98`) | `amber` (`#FFBF00`) |
+| `yellow` (`#FFFF00`) | `teal` (`#008080`) | `lime` (`#00FF00`) | `coral` (`#FF7F50`) |
+| `blue` (`#0000FF`) | `ice` (`#A5F2F3`) | `forest` (`#228B22`) | `purple` (`#800080`) |
+| `ivory` (`#FFFFF0`) | `navy` (`#000080`) | `olive` (`#808000`) | `lavender` (`#E6E6FA`)|
+
+---
+
+## 🔄 Automated GNOME Layout Indicator
+
+If you want the keyboard backlight to dynamically indicate your active typing language (e.g., White for English, Red for Arabic or Russian):
+
+1. **Install the GNOME Extension**:
+   ```bash
+   cp -r input-source-monitor@eshfield ~/.local/share/gnome-shell/extensions/
+   ```
+2. Restart GNOME Shell (or log out and back in) and enable it:
+   ```bash
+   gnome-extensions enable input-source-monitor@eshfield
+   ```
+3. Run the monitor daemon:
+   ```bash
+   python3 main.py
+   ```
+
+---
+
+## 🔬 How It Works (Protocol Reverse Engineering)
+
+The tool communicates directly with Linux hidraw devices (`/dev/hidraw*`) using the standard `hidapi` library:
+
+1. **Device Discovery**: Scans connected USB HID devices matching `VID 0x258a`, `PID 0x0049`, and vendor usage page `65280` (`0xFF00`).
+2. **Feature Reports**:
+   - **Packet 1 (Color)**: A 1032-byte padded feature report containing the RGB byte sequence mapped to the LED controller matrix.
+   - **Packet 2 (Brightness & Mode)**: A 1032-byte report configuring the intensity byte (`0x30` to `0x34`) and lighting profile.
+
+---
+
+## 📜 Credits & Acknowledgments
+
+- **Zakaria Elkhadir**: Extended CLI architecture, `redraglow` tool, color normalization engine, brightness adjustment, udev diagnostic helper, and project modernization.
+- **Henry Eshfield**: Original USB HID packet capture research and GNOME input-source D-Bus extension ([Anubeam](https://github.com/eshfield/Anubeam)).
+
+---
+
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE).

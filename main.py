@@ -20,7 +20,7 @@ COLORS = {
     "ru": RED,
 }
 
-logger = logging.getLogger("anubeam")
+logger = logging.getLogger("redraglow")
 
 logging.basicConfig(
     level=logging.INFO,
